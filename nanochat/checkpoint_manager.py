@@ -26,6 +26,10 @@ def _patch_missing_config_keys(model_config_kwargs):
     if "window_pattern" not in model_config_kwargs:
         model_config_kwargs["window_pattern"] = "L"
         log0(f"Patching missing window_pattern in model config to 'L'")
+    # Old models used per_layer value embeddings (before ve_mode was added)
+    if "ve_mode" not in model_config_kwargs:
+        model_config_kwargs["ve_mode"] = "per_layer"
+        log0(f"Patching missing ve_mode in model config to 'per_layer'")
 
 def _patch_missing_keys(model_data, model_config):
     """Add default values for new parameters that may be missing in old checkpoints."""

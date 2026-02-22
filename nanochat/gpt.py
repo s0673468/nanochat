@@ -37,6 +37,9 @@ class GPTConfig:
     # Characters: L=long (full context), S=short (half context)
     # Examples: "L"=all full context, "SL"=alternating, "SSL"=two short then one long
     window_pattern: str = "SSSL"
+    # Value embedding mode: "per_layer" = independent embedding table per VE layer (default),
+    # "v1_reuse" = compute V from layer 0's c_v and reuse at subsequent VE layers (classic ResFormer)
+    ve_mode: str = "per_layer"
 
 
 def norm(x):
@@ -174,7 +177,12 @@ class GPT(nn.Module):
         # Value embeddings (ResFormer-style): alternating layers, last layer always included
         head_dim = config.n_embd // config.n_head
         kv_dim = config.n_kv_head * head_dim
-        self.value_embeds = nn.ModuleDict({str(i): nn.Embedding(padded_vocab_size, kv_dim) for i in range(config.n_layer) if has_ve(i, config.n_layer)})
+        if config.ve_mode == "per_layer":
+            self.value_embeds = nn.ModuleDict({str(i): nn.Embedding(padded_vocab_size, kv_dim) for i in range(config.n_layer) if has_ve(i, config.n_layer)})
+        elif config.ve_mode == "v1_reuse":
+            self.value_embeds = nn.ModuleDict()  # no VE tables — reuse layer 0's V instead
+        else:
+            raise ValueError(f"Unknown ve_mode: {config.ve_mode}")
         # To support meta device initialization, we init the rotary embeddings here, but it's just "fake" meta tensors only.
         # As for rotary_seq_len, these rotary embeddings are pretty small/cheap in memory,
         # so let's just over-compute them by 10X, but assert fail if we ever reach that amount.
@@ -400,9 +408,17 @@ class GPT(nn.Module):
         x = self.transformer.wte(idx) # embed current token
         x = norm(x)
         x0 = x  # save initial normalized embedding for x0 residual
+        v1 = None  # for v1_reuse mode: layer 0's computed V, reused at subsequent VE layers
         for i, block in enumerate(self.transformer.h):
             x = self.resid_lambdas[i] * x + self.x0_lambdas[i] * x0
-            ve = self.value_embeds[str(i)](idx) if str(i) in self.value_embeds else None
+            if self.config.ve_mode == "v1_reuse":
+                if i == 0:
+                    v1 = block.attn.c_v(norm(x))  # compute and save layer 0's V
+                    ve = None  # layer 0 never has VE (has_ve(0, even_n_layer) is always False)
+                else:
+                    ve = v1 if has_ve(i, self.config.n_layer) else None
+            else:
+                ve = self.value_embeds[str(i)](idx) if str(i) in self.value_embeds else None
             x = block(x, ve, cos_sin, self.window_sizes[i], kv_cache)
         x = norm(x)
 
