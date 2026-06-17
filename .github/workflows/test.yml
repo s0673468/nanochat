@@ -17,7 +17,7 @@ jobs:
           python-version: "3.11"
       - name: Install dependencies
         run: |
-          python -m pip install filelock numpy pytest rustbpe tokenizers
+          python -m pip install filelock numpy pytest rustbpe tiktoken tokenizers
           python -m pip install torch==2.9.1 --index-url https://download.pytorch.org/whl/cpu
       - name: Run tests
         run: python -m pytest -m "not slow"
