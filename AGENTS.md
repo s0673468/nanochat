@@ -15,6 +15,9 @@ uv sync --extra cpu                # CPU/MPS
 source .venv/bin/activate
 
 # Tests
+make check                         # lint + non-slow tests
+make lint                          # defect-focused Python lint
+make test                          # non-slow tests
 pytest                             # all tests
 pytest -m "not slow"               # skip slow tests
 
